@@ -16,6 +16,8 @@ package procfs
 import (
 	"bufio"
 	"bytes"
+	"fmt"
+	"io"
 	"strconv"
 	"strings"
 
@@ -26,9 +28,9 @@ import (
 type Meminfo struct {
 	// Total usable ram (i.e. physical ram minus a few reserved
 	// bits and the kernel binary code)
-	MemTotal uint64
+	MemTotal *uint64
 	// The sum of LowFree+HighFree
-	MemFree uint64
+	MemFree *uint64
 	// An estimate of how much memory is available for starting
 	// new applications, without swapping. Calculated from
 	// MemFree, SReclaimable, the size of the file LRU lists, and
@@ -37,59 +39,59 @@ type Meminfo struct {
 	// well, and that not all reclaimable slab will be
 	// reclaimable, due to items being in use. The impact of those
 	// factors will vary from system to system.
-	MemAvailable uint64
+	MemAvailable *uint64
 	// Relatively temporary storage for raw disk blocks shouldn't
 	// get tremendously large (20MB or so)
-	Buffers uint64
-	Cached  uint64
+	Buffers *uint64
+	Cached  *uint64
 	// Memory that once was swapped out, is swapped back in but
 	// still also is in the swapfile (if memory is needed it
 	// doesn't need to be swapped out AGAIN because it is already
 	// in the swapfile. This saves I/O)
-	SwapCached uint64
+	SwapCached *uint64
 	// Memory that has been used more recently and usually not
 	// reclaimed unless absolutely necessary.
-	Active uint64
+	Active *uint64
 	// Memory which has been less recently used.  It is more
 	// eligible to be reclaimed for other purposes
-	Inactive     uint64
-	ActiveAnon   uint64
-	InactiveAnon uint64
-	ActiveFile   uint64
-	InactiveFile uint64
-	Unevictable  uint64
-	Mlocked      uint64
+	Inactive     *uint64
+	ActiveAnon   *uint64
+	InactiveAnon *uint64
+	ActiveFile   *uint64
+	InactiveFile *uint64
+	Unevictable  *uint64
+	Mlocked      *uint64
 	// total amount of swap space available
-	SwapTotal uint64
+	SwapTotal *uint64
 	// Memory which has been evicted from RAM, and is temporarily
 	// on the disk
-	SwapFree uint64
+	SwapFree *uint64
 	// Memory which is waiting to get written back to the disk
-	Dirty uint64
+	Dirty *uint64
 	// Memory which is actively being written back to the disk
-	Writeback uint64
+	Writeback *uint64
 	// Non-file backed pages mapped into userspace page tables
-	AnonPages uint64
+	AnonPages *uint64
 	// files which have been mapped, such as libraries
-	Mapped uint64
-	Shmem  uint64
+	Mapped *uint64
+	Shmem  *uint64
 	// in-kernel data structures cache
-	Slab uint64
+	Slab *uint64
 	// Part of Slab, that might be reclaimed, such as caches
-	SReclaimable uint64
+	SReclaimable *uint64
 	// Part of Slab, that cannot be reclaimed on memory pressure
-	SUnreclaim  uint64
-	KernelStack uint64
+	SUnreclaim  *uint64
+	KernelStack *uint64
 	// amount of memory dedicated to the lowest level of page
 	// tables.
-	PageTables uint64
+	PageTables *uint64
 	// NFS pages sent to the server, but not yet committed to
 	// stable storage
-	NFSUnstable uint64
+	NFSUnstable *uint64
 	// Memory used for block device "bounce buffers"
-	Bounce uint64
+	Bounce *uint64
 	// Memory used by FUSE for temporary writeback buffers
-	WritebackTmp uint64
+	WritebackTmp *uint64
 	// Based on the overcommit ratio ('vm.overcommit_ratio'),
 	// this is the total amount of  memory currently available to
 	// be allocated on the system. This limit is only adhered to
@@ -103,7 +105,7 @@ type Meminfo struct {
 	// yield a CommitLimit of 7.3G.
 	// For more details, see the memory overcommit documentation
 	// in vm/overcommit-accounting.
-	CommitLimit uint64
+	CommitLimit *uint64
 	// The amount of memory presently allocated on the system.
 	// The committed memory is a sum of all of the memory which
 	// has been allocated by processes, even if it has not been
@@ -117,337 +119,271 @@ type Meminfo struct {
 	// This is useful if one needs to guarantee that processes will
 	// not fail due to lack of memory once that memory has been
 	// successfully allocated.
-	CommittedAS uint64
+	CommittedAS *uint64
 	// total size of vmalloc memory area
-	VmallocTotal uint64
+	VmallocTotal *uint64
 	// amount of vmalloc area which is used
-	VmallocUsed uint64
+	VmallocUsed *uint64
 	// largest contiguous block of vmalloc area which is free
-	VmallocChunk      uint64
-	HardwareCorrupted uint64
-	AnonHugePages     uint64
-	ShmemHugePages    uint64
-	ShmemPmdMapped    uint64
-	CmaTotal          uint64
-	CmaFree           uint64
-	HugePagesTotal    uint64
-	HugePagesFree     uint64
-	HugePagesRsvd     uint64
-	HugePagesSurp     uint64
-	Hugepagesize      uint64
-	DirectMap4k       uint64
-	DirectMap2M       uint64
-	DirectMap1G       uint64
+	VmallocChunk      *uint64
+	Percpu            *uint64
+	HardwareCorrupted *uint64
+	AnonHugePages     *uint64
+	ShmemHugePages    *uint64
+	ShmemPmdMapped    *uint64
+	CmaTotal          *uint64
+	CmaFree           *uint64
+	HugePagesTotal    *uint64
+	HugePagesFree     *uint64
+	HugePagesRsvd     *uint64
+	HugePagesSurp     *uint64
+	Hugepagesize      *uint64
+	DirectMap4k       *uint64
+	DirectMap2M       *uint64
+	DirectMap1G       *uint64
+
+	// The struct fields below are the byte-normalized counterparts to the
+	// existing struct fields. Values are normalized using the optional
+	// unit field in the meminfo line.
+	MemTotalBytes          *uint64
+	MemFreeBytes           *uint64
+	MemAvailableBytes      *uint64
+	BuffersBytes           *uint64
+	CachedBytes            *uint64
+	SwapCachedBytes        *uint64
+	ActiveBytes            *uint64
+	InactiveBytes          *uint64
+	ActiveAnonBytes        *uint64
+	InactiveAnonBytes      *uint64
+	ActiveFileBytes        *uint64
+	InactiveFileBytes      *uint64
+	UnevictableBytes       *uint64
+	MlockedBytes           *uint64
+	SwapTotalBytes         *uint64
+	SwapFreeBytes          *uint64
+	DirtyBytes             *uint64
+	WritebackBytes         *uint64
+	AnonPagesBytes         *uint64
+	MappedBytes            *uint64
+	ShmemBytes             *uint64
+	SlabBytes              *uint64
+	SReclaimableBytes      *uint64
+	SUnreclaimBytes        *uint64
+	KernelStackBytes       *uint64
+	PageTablesBytes        *uint64
+	NFSUnstableBytes       *uint64
+	BounceBytes            *uint64
+	WritebackTmpBytes      *uint64
+	CommitLimitBytes       *uint64
+	CommittedASBytes       *uint64
+	VmallocTotalBytes      *uint64
+	VmallocUsedBytes       *uint64
+	VmallocChunkBytes      *uint64
+	PercpuBytes            *uint64
+	HardwareCorruptedBytes *uint64
+	AnonHugePagesBytes     *uint64
+	ShmemHugePagesBytes    *uint64
+	ShmemPmdMappedBytes    *uint64
+	CmaTotalBytes          *uint64
+	CmaFreeBytes           *uint64
+	HugepagesizeBytes      *uint64
+	DirectMap4kBytes       *uint64
+	DirectMap2MBytes       *uint64
+	DirectMap1GBytes       *uint64
 }
 
 // Meminfo returns an information about current kernel/system memory statistics.
 // See https://www.kernel.org/doc/Documentation/filesystems/proc.txt
 func (fs FS) Meminfo() (Meminfo, error) {
-	data, err := util.ReadFileNoStat(fs.proc.Path("meminfo"))
+	b, err := util.ReadFileNoStat(fs.proc.Path("meminfo"))
 	if err != nil {
 		return Meminfo{}, err
 	}
-	return parseMemInfo(data)
+
+	m, err := parseMemInfo(bytes.NewReader(b))
+	if err != nil {
+		return Meminfo{}, fmt.Errorf("%w: %w", ErrFileParse, err)
+	}
+
+	return *m, nil
 }
 
-func parseMemInfo(info []byte) (m Meminfo, err error) {
-	scanner := bufio.NewScanner(bytes.NewReader(info))
+func parseMemInfo(r io.Reader) (*Meminfo, error) {
+	var m Meminfo
+	s := bufio.NewScanner(r)
+	for s.Scan() {
+		fields := strings.Fields(s.Text())
+		var val, valBytes uint64
 
-	var line string
-	for scanner.Scan() {
-		line = scanner.Text()
+		val, err := strconv.ParseUint(fields[1], 0, 64)
+		if err != nil {
+			return nil, err
+		}
 
-		field := strings.Fields(line)
-		switch field[0] {
+		switch len(fields) {
+		case 2:
+			// No unit present, use the parsed the value as bytes directly.
+			valBytes = val
+		case 3:
+			// Unit present in optional 3rd field, convert it to
+			// bytes. The only unit supported within the Linux
+			// kernel is `kB`.
+			if fields[2] != "kB" {
+				return nil, fmt.Errorf("%w: Unsupported unit in optional 3rd field %q", ErrFileParse, fields[2])
+			}
+
+			valBytes = 1024 * val
+
+		default:
+			return nil, fmt.Errorf("%w: Malformed line %q", ErrFileParse, s.Text())
+		}
+
+		switch fields[0] {
 		case "MemTotal:":
-			v, err := strconv.ParseUint(field[1], 0, 64)
-			if err != nil {
-				return Meminfo{}, err
-			}
-			m.MemTotal = v
+			m.MemTotal = &val
+			m.MemTotalBytes = &valBytes
 		case "MemFree:":
-			v, err := strconv.ParseUint(field[1], 0, 64)
-			if err != nil {
-				return Meminfo{}, err
-			}
-			m.MemFree = v
+			m.MemFree = &val
+			m.MemFreeBytes = &valBytes
 		case "MemAvailable:":
-			v, err := strconv.ParseUint(field[1], 0, 64)
-			if err != nil {
-				return Meminfo{}, err
-			}
-			m.MemAvailable = v
+			m.MemAvailable = &val
+			m.MemAvailableBytes = &valBytes
 		case "Buffers:":
-			v, err := strconv.ParseUint(field[1], 0, 64)
-			if err != nil {
-				return Meminfo{}, err
-			}
-			m.Buffers = v
+			m.Buffers = &val
+			m.BuffersBytes = &valBytes
 		case "Cached:":
-			v, err := strconv.ParseUint(field[1], 0, 64)
-			if err != nil {
-				return Meminfo{}, err
-			}
-			m.Cached = v
+			m.Cached = &val
+			m.CachedBytes = &valBytes
 		case "SwapCached:":
-			v, err := strconv.ParseUint(field[1], 0, 64)
-			if err != nil {
-				return Meminfo{}, err
-			}
-			m.SwapCached = v
+			m.SwapCached = &val
+			m.SwapCachedBytes = &valBytes
 		case "Active:":
-			v, err := strconv.ParseUint(field[1], 0, 64)
-			if err != nil {
-				return Meminfo{}, err
-			}
-			m.Active = v
+			m.Active = &val
+			m.ActiveBytes = &valBytes
 		case "Inactive:":
-			v, err := strconv.ParseUint(field[1], 0, 64)
-			if err != nil {
-				return Meminfo{}, err
-			}
-			m.Inactive = v
+			m.Inactive = &val
+			m.InactiveBytes = &valBytes
 		case "Active(anon):":
-			v, err := strconv.ParseUint(field[1], 0, 64)
-			if err != nil {
-				return Meminfo{}, err
-			}
-			m.ActiveAnon = v
+			m.ActiveAnon = &val
+			m.ActiveAnonBytes = &valBytes
 		case "Inactive(anon):":
-			v, err := strconv.ParseUint(field[1], 0, 64)
-			if err != nil {
-				return Meminfo{}, err
-			}
-			m.InactiveAnon = v
+			m.InactiveAnon = &val
+			m.InactiveAnonBytes = &valBytes
 		case "Active(file):":
-			v, err := strconv.ParseUint(field[1], 0, 64)
-			if err != nil {
-				return Meminfo{}, err
-			}
-			m.ActiveFile = v
+			m.ActiveFile = &val
+			m.ActiveFileBytes = &valBytes
 		case "Inactive(file):":
-			v, err := strconv.ParseUint(field[1], 0, 64)
-			if err != nil {
-				return Meminfo{}, err
-			}
-			m.InactiveFile = v
+			m.InactiveFile = &val
+			m.InactiveFileBytes = &valBytes
 		case "Unevictable:":
-			v, err := strconv.ParseUint(field[1], 0, 64)
-			if err != nil {
-				return Meminfo{}, err
-			}
-			m.Unevictable = v
+			m.Unevictable = &val
+			m.UnevictableBytes = &valBytes
 		case "Mlocked:":
-			v, err := strconv.ParseUint(field[1], 0, 64)
-			if err != nil {
-				return Meminfo{}, err
-			}
-			m.Mlocked = v
+			m.Mlocked = &val
+			m.MlockedBytes = &valBytes
 		case "SwapTotal:":
-			v, err := strconv.ParseUint(field[1], 0, 64)
-			if err != nil {
-				return Meminfo{}, err
-			}
-			m.SwapTotal = v
+			m.SwapTotal = &val
+			m.SwapTotalBytes = &valBytes
 		case "SwapFree:":
-			v, err := strconv.ParseUint(field[1], 0, 64)
-			if err != nil {
-				return Meminfo{}, err
-			}
-			m.SwapFree = v
+			m.SwapFree = &val
+			m.SwapFreeBytes = &valBytes
 		case "Dirty:":
-			v, err := strconv.ParseUint(field[1], 0, 64)
-			if err != nil {
-				return Meminfo{}, err
-			}
-			m.Dirty = v
+			m.Dirty = &val
+			m.DirtyBytes = &valBytes
 		case "Writeback:":
-			v, err := strconv.ParseUint(field[1], 0, 64)
-			if err != nil {
-				return Meminfo{}, err
-			}
-			m.Writeback = v
+			m.Writeback = &val
+			m.WritebackBytes = &valBytes
 		case "AnonPages:":
-			v, err := strconv.ParseUint(field[1], 0, 64)
-			if err != nil {
-				return Meminfo{}, err
-			}
-			m.AnonPages = v
+			m.AnonPages = &val
+			m.AnonPagesBytes = &valBytes
 		case "Mapped:":
-			v, err := strconv.ParseUint(field[1], 0, 64)
-			if err != nil {
-				return Meminfo{}, err
-			}
-			m.Mapped = v
+			m.Mapped = &val
+			m.MappedBytes = &valBytes
 		case "Shmem:":
-			v, err := strconv.ParseUint(field[1], 0, 64)
-			if err != nil {
-				return Meminfo{}, err
-			}
-			m.Shmem = v
+			m.Shmem = &val
+			m.ShmemBytes = &valBytes
 		case "Slab:":
-			v, err := strconv.ParseUint(field[1], 0, 64)
-			if err != nil {
-				return Meminfo{}, err
-			}
-			m.Slab = v
+			m.Slab = &val
+			m.SlabBytes = &valBytes
 		case "SReclaimable:":
-			v, err := strconv.ParseUint(field[1], 0, 64)
-			if err != nil {
-				return Meminfo{}, err
-			}
-			m.SReclaimable = v
+			m.SReclaimable = &val
+			m.SReclaimableBytes = &valBytes
 		case "SUnreclaim:":
-			v, err := strconv.ParseUint(field[1], 0, 64)
-			if err != nil {
-				return Meminfo{}, err
-			}
-			m.SUnreclaim = v
+			m.SUnreclaim = &val
+			m.SUnreclaimBytes = &valBytes
 		case "KernelStack:":
-			v, err := strconv.ParseUint(field[1], 0, 64)
-			if err != nil {
-				return Meminfo{}, err
-			}
-			m.KernelStack = v
+			m.KernelStack = &val
+			m.KernelStackBytes = &valBytes
 		case "PageTables:":
-			v, err := strconv.ParseUint(field[1], 0, 64)
-			if err != nil {
-				return Meminfo{}, err
-			}
-			m.PageTables = v
+			m.PageTables = &val
+			m.PageTablesBytes = &valBytes
 		case "NFS_Unstable:":
-			v, err := strconv.ParseUint(field[1], 0, 64)
-			if err != nil {
-				return Meminfo{}, err
-			}
-			m.NFSUnstable = v
+			m.NFSUnstable = &val
+			m.NFSUnstableBytes = &valBytes
 		case "Bounce:":
-			v, err := strconv.ParseUint(field[1], 0, 64)
-			if err != nil {
-				return Meminfo{}, err
-			}
-			m.Bounce = v
+			m.Bounce = &val
+			m.BounceBytes = &valBytes
 		case "WritebackTmp:":
-			v, err := strconv.ParseUint(field[1], 0, 64)
-			if err != nil {
-				return Meminfo{}, err
-			}
-			m.WritebackTmp = v
+			m.WritebackTmp = &val
+			m.WritebackTmpBytes = &valBytes
 		case "CommitLimit:":
-			v, err := strconv.ParseUint(field[1], 0, 64)
-			if err != nil {
-				return Meminfo{}, err
-			}
-			m.CommitLimit = v
+			m.CommitLimit = &val
+			m.CommitLimitBytes = &valBytes
 		case "Committed_AS:":
-			v, err := strconv.ParseUint(field[1], 0, 64)
-			if err != nil {
-				return Meminfo{}, err
-			}
-			m.CommittedAS = v
+			m.CommittedAS = &val
+			m.CommittedASBytes = &valBytes
 		case "VmallocTotal:":
-			v, err := strconv.ParseUint(field[1], 0, 64)
-			if err != nil {
-				return Meminfo{}, err
-			}
-			m.VmallocTotal = v
+			m.VmallocTotal = &val
+			m.VmallocTotalBytes = &valBytes
 		case "VmallocUsed:":
-			v, err := strconv.ParseUint(field[1], 0, 64)
-			if err != nil {
-				return Meminfo{}, err
-			}
-			m.VmallocUsed = v
+			m.VmallocUsed = &val
+			m.VmallocUsedBytes = &valBytes
 		case "VmallocChunk:":
-			v, err := strconv.ParseUint(field[1], 0, 64)
-			if err != nil {
-				return Meminfo{}, err
-			}
-			m.VmallocChunk = v
+			m.VmallocChunk = &val
+			m.VmallocChunkBytes = &valBytes
+		case "Percpu:":
+			m.Percpu = &val
+			m.PercpuBytes = &valBytes
 		case "HardwareCorrupted:":
-			v, err := strconv.ParseUint(field[1], 0, 64)
-			if err != nil {
-				return Meminfo{}, err
-			}
-			m.HardwareCorrupted = v
+			m.HardwareCorrupted = &val
+			m.HardwareCorruptedBytes = &valBytes
 		case "AnonHugePages:":
-			v, err := strconv.ParseUint(field[1], 0, 64)
-			if err != nil {
-				return Meminfo{}, err
-			}
-			m.AnonHugePages = v
+			m.AnonHugePages = &val
+			m.AnonHugePagesBytes = &valBytes
 		case "ShmemHugePages:":
-			v, err := strconv.ParseUint(field[1], 0, 64)
-			if err != nil {
-				return Meminfo{}, err
-			}
-			m.ShmemHugePages = v
+			m.ShmemHugePages = &val
+			m.ShmemHugePagesBytes = &valBytes
 		case "ShmemPmdMapped:":
-			v, err := strconv.ParseUint(field[1], 0, 64)
-			if err != nil {
-				return Meminfo{}, err
-			}
-			m.ShmemPmdMapped = v
+			m.ShmemPmdMapped = &val
+			m.ShmemPmdMappedBytes = &valBytes
 		case "CmaTotal:":
-			v, err := strconv.ParseUint(field[1], 0, 64)
-			if err != nil {
-				return Meminfo{}, err
-			}
-			m.CmaTotal = v
+			m.CmaTotal = &val
+			m.CmaTotalBytes = &valBytes
 		case "CmaFree:":
-			v, err := strconv.ParseUint(field[1], 0, 64)
-			if err != nil {
-				return Meminfo{}, err
-			}
-			m.CmaFree = v
+			m.CmaFree = &val
+			m.CmaFreeBytes = &valBytes
 		case "HugePages_Total:":
-			v, err := strconv.ParseUint(field[1], 0, 64)
-			if err != nil {
-				return Meminfo{}, err
-			}
-			m.HugePagesTotal = v
+			m.HugePagesTotal = &val
 		case "HugePages_Free:":
-			v, err := strconv.ParseUint(field[1], 0, 64)
-			if err != nil {
-				return Meminfo{}, err
-			}
-			m.HugePagesFree = v
+			m.HugePagesFree = &val
 		case "HugePages_Rsvd:":
-			v, err := strconv.ParseUint(field[1], 0, 64)
-			if err != nil {
-				return Meminfo{}, err
-			}
-			m.HugePagesRsvd = v
+			m.HugePagesRsvd = &val
 		case "HugePages_Surp:":
-			v, err := strconv.ParseUint(field[1], 0, 64)
-			if err != nil {
-				return Meminfo{}, err
-			}
-			m.HugePagesSurp = v
+			m.HugePagesSurp = &val
 		case "Hugepagesize:":
-			v, err := strconv.ParseUint(field[1], 0, 64)
-			if err != nil {
-				return Meminfo{}, err
-			}
-			m.Hugepagesize = v
+			m.Hugepagesize = &val
+			m.HugepagesizeBytes = &valBytes
 		case "DirectMap4k:":
-			v, err := strconv.ParseUint(field[1], 0, 64)
-			if err != nil {
-				return Meminfo{}, err
-			}
-			m.DirectMap4k = v
+			m.DirectMap4k = &val
+			m.DirectMap4kBytes = &valBytes
 		case "DirectMap2M:":
-			v, err := strconv.ParseUint(field[1], 0, 64)
-			if err != nil {
-				return Meminfo{}, err
-			}
-			m.DirectMap2M = v
+			m.DirectMap2M = &val
+			m.DirectMap2MBytes = &valBytes
 		case "DirectMap1G:":
-			v, err := strconv.ParseUint(field[1], 0, 64)
-			if err != nil {
-				return Meminfo{}, err
-			}
-			m.DirectMap1G = v
+			m.DirectMap1G = &val
+			m.DirectMap1GBytes = &valBytes
 		}
 	}
-	return m, nil
+
+	return &m, nil
 }

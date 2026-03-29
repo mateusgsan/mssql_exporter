@@ -23,7 +23,7 @@ var (
 )
 
 func init() {
-	prometheus.MustRegister(version.NewCollector("sql_exporter"))
+	prometheus.MustRegister(prometheus.NewBuildInfoCollector())
 }
 
 func main() {
