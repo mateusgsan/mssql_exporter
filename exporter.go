@@ -4,6 +4,7 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"math"
 	"sync"
 
 	"github.com/mateusgsan/mssql_exporter/config"
@@ -55,6 +56,10 @@ func NewExporter(configFile string) (Exporter, error) {
 		}
 		targets = []Target{target}
 	} else {
+		const maxJobs = math.MaxInt / 3
+		if len(c.Jobs) > maxJobs {
+			return nil, fmt.Errorf("too many jobs in config")
+		}
 		targets = make([]Target, 0, len(c.Jobs)*3)
 		for _, jc := range c.Jobs {
 			job, err := NewJob(jc, c.Globals)
