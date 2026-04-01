@@ -14,7 +14,7 @@ RUN go mod download
 COPY . .
 
 # Build a statically linked binary
-RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 \
+RUN CGO_ENABLED=0 GOOS=linux GOARCH=arm \
     go build -trimpath \
     -ldflags="-s -w" \
     -o sql_exporter \
