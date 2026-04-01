@@ -7,8 +7,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/free/sql_exporter/config"
-	"github.com/free/sql_exporter/errors"
+	"github.com/mateusgsan/mssql_exporter/config"
+	"github.com/mateusgsan/mssql_exporter/errors"
 	log "github.com/golang/glog"
 	dto "github.com/prometheus/client_model/go"
 )

@@ -3,7 +3,7 @@ package sql_exporter
 import (
 	"testing"
 
-	"github.com/free/sql_exporter/config"
+	"github.com/mateusgsan/mssql_exporter/config"
 	"github.com/prometheus/client_golang/prometheus"
 	dto "github.com/prometheus/client_model/go"
 	"github.com/golang/protobuf/proto"

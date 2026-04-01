@@ -4,7 +4,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/free/sql_exporter/config"
+	"github.com/mateusgsan/mssql_exporter/config"
 	"github.com/prometheus/common/model"
 	"gopkg.in/yaml.v2"
 )

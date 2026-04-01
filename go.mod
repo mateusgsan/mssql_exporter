@@ -1,4 +1,4 @@
-module github.com/free/sql_exporter
+module github.com/mateusgsan/mssql_exporter
 
 go 1.24.0
 
